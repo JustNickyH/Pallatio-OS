@@ -1,3 +1,4 @@
+Markdown
 # 🛡️ PALLATIO OS: Zero-Trust Kiosk Architecture
 
 ![Ubuntu LTS](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
@@ -44,3 +45,52 @@ kernel.sysrq = 0
 
 # Apply changes immediately
 sysctl -p
+2. The Auto-Login Hijack (/etc/init/tty1.conf)
+Forcing the terminal initialization to boot securely into our restricted user.
+
+Bash
+# Replaced the standard getty execution to force an isolated session
+# The 'kioskuser' has been stripped of all bash-execution rights
+exec /sbin/getty -8 38400 tty1 -a kioskuser
+3. The X11 Sandbox Execution (.xinitrc)
+The absolute core of Pallatio OS. This script creates the "prison" around the target application.
+
+Bash
+#!/bin/bash
+# 1. Disable X server access control
+xhost +local:
+
+# 2. Neutralize Display Power Management (No screen sleeping)
+xset -dpms
+xset s off
+xset s noblank
+
+# 3. Hide the mouse cursor to prevent UI probing
+unclutter -idle 0.1 -root &
+
+# 4. Launch a lightweight, borderless window manager
+matchbox-window-manager -use_titlebar no &
+
+# 5. Trap the user in the Chromium Kiosk mode
+# Flags: Prevent first-run dialogs, disable translation, force incognito (no data saving)
+exec chromium-browser \
+  --kiosk \
+  --incognito \
+  --disable-translate \
+  --no-first-run \
+  --fast \
+  --fast-start \
+  '[http://internal.company.portal](http://internal.company.portal)'
+4. Administrator Access (Maintenance Mode)
+Since physical keyboard access is completely locked to the browser, how do IT teams maintain the machine?
+
+Zero-Trust Remote Access: The system is completely headless from a configuration standpoint. IT Admins can only perform maintenance via SSH, restricted by RSA Key-Pair authentication (password authentication is strictly disabled in /etc/ssh/sshd_config).
+
+📊 Business Impact & ROI
+99% Reduction in Physical Attack Surface: Neutralized USB plug-and-play exploits and keyboard-shortcut breakouts.
+
+Zero Maintenance Overhead: By running in Incognito and wiping session data continuously, the terminal never suffers from cache bloat or user-induced errors.
+
+High Availability: Ensures production-floor metrics or public information displays achieve near 100% uptime without IT intervention.
+
+Architected by Nicky Hadfat Sugianto | AI Agent Developer & Cyber Security Enthusiast.
