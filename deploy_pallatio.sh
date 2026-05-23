@@ -27,7 +27,7 @@
 #   USAGE:          sudo bash deploy_pallatio.sh
 #
 #   SECURITY ARCHITECT:
-#                   Nicky Hadfat
+#                   JustNickyH
 #                   All security policies, kernel hardening parameters, and
 #                   privilege-separation strategies in this script were
 #                   designed and reviewed by Nicky Hadfat.
