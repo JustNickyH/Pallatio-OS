@@ -57,7 +57,7 @@ Forcing the terminal initialization to boot securely into our restricted user.
 # The 'kioskuser' has been stripped of all bash-execution rights
 exec /sbin/getty -8 38400 tty1 -a kioskuser
 ```
-**3. The X11 Sandbox Execution (.xinitrc)**
+### 3. The X11 Sandbox Execution (.xinitrc)
 
 The absolute core of Pallatio OS. This script creates the "prison" around the target application.
 
@@ -88,13 +88,13 @@ exec chromium-browser \
   --fast-start \
   '[http://internal.company.portal](http://internal.company.portal)'
 ```
-**4. Administrator Access (Maintenance Mode)**
+### 4. Administrator Access (Maintenance Mode)**
 
 Since physical keyboard access is completely locked to the browser, how do IT teams maintain the machine?
 
 Zero-Trust Remote Access: The system is completely headless from a configuration standpoint. IT Admins can only perform maintenance via SSH, restricted by RSA Key-Pair authentication (password authentication is strictly disabled in /etc/ssh/sshd_config).
 
-**📊 Business Impact & ROI**
+### 📊 Business Impact & ROI
 
 99% Reduction in Physical Attack Surface: Neutralized USB plug-and-play exploits and keyboard-shortcut breakouts.
 
