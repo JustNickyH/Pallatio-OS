@@ -39,23 +39,26 @@ Pallatio entirely eliminates the Desktop Environment (GNOME, KDE, etc.). There i
 
 ### 1. Disabling Kernel SysRq Escapes (`/etc/sysctl.conf`)
 Preventing attackers from sending low-level commands directly to the Linux kernel.
+
 ```bash
 # Append to /etc/sysctl.conf to neutralize Magic SysRq attacks
 kernel.sysrq = 0
 
 # Apply changes immediately
 sysctl -p
-2. The Auto-Login Hijack (/etc/init/tty1.conf)
+```
+### 2. The Auto-Login Hijack (/etc/init/tty1.conf)
 Forcing the terminal initialization to boot securely into our restricted user.
 
-Bash
+```Bash
 # Replaced the standard getty execution to force an isolated session
 # The 'kioskuser' has been stripped of all bash-execution rights
 exec /sbin/getty -8 38400 tty1 -a kioskuser
+```
 3. The X11 Sandbox Execution (.xinitrc)
 The absolute core of Pallatio OS. This script creates the "prison" around the target application.
 
-Bash
+```Bash
 #!/bin/bash
 # 1. Disable X server access control
 xhost +local:
@@ -81,6 +84,7 @@ exec chromium-browser \
   --fast \
   --fast-start \
   '[http://internal.company.portal](http://internal.company.portal)'
+```
 4. Administrator Access (Maintenance Mode)
 Since physical keyboard access is completely locked to the browser, how do IT teams maintain the machine?
 
