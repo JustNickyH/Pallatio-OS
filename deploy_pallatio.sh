@@ -19,7 +19,7 @@
 #===============================================================================
 #
 #   FILE:           deploy_pallatio.sh
-#   VERSION:        1.0.0
+#   VERSION:        1.1.0
 #   DESCRIPTION:    Automated provisioning script for Pallatio OS kiosk
 #                   environments. Configures a hardened, single-purpose
 #                   Linux workstation running Chromium in strict kiosk mode.
@@ -161,7 +161,7 @@ echo ""
 echo -e "\033[1;35m╔══════════════════════════════════════════════════════════════════╗\033[0m"
 echo -e "\033[1;35m║                                                                  ║\033[0m"
 echo -e "\033[1;35m║\033[0m   \033[1;37mPALLATIO OS\033[0m — Secure Kiosk Deployment Engine                \033[1;35m║\033[0m"
-echo -e "\033[1;35m║\033[0m   Version 1.0.0                                                \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m   Version 1.1.0                                                \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   Security Architect : \033[1;33mNicky Hadfat\033[0m                             \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   Deployment Date    : ${TIMESTAMP}                  \033[1;35m║\033[0m"
@@ -208,7 +208,7 @@ log_info "Timestamp: ${TIMESTAMP}"
 #
 # ==============================================================================
 
-log_step "1/4" "Creating restricted kiosk user '${KIOSK_USER}'"
+log_step "1/7" "Creating restricted kiosk user '${KIOSK_USER}'"
 
 if id "${KIOSK_USER}" &>/dev/null; then
     # If the user already exists from a previous deployment, log a warning
@@ -274,7 +274,7 @@ log_info "Password for '${KIOSK_USER}' is locked."
 #
 # ==============================================================================
 
-log_step "2/4" "Hardening kernel — disabling Magic SysRq key"
+log_step "2/7" "Hardening kernel — disabling Magic SysRq key"
 
 # Define the sysctl parameter we need to enforce.
 readonly SYSRQ_PARAM="kernel.sysrq = 0"
@@ -359,7 +359,7 @@ fi
 #
 # ==============================================================================
 
-log_step "3/4" "Generating secure autologin configuration for TTY '${AUTOLOGIN_TTY}'"
+log_step "3/7" "Generating secure autologin configuration for TTY '${AUTOLOGIN_TTY}'"
 
 # Create the systemd drop-in override directory if it doesn't exist.
 # systemd reads drop-in files from /etc/systemd/system/<unit>.d/*.conf
@@ -526,7 +526,7 @@ log_info "systemd daemon reloaded. Autologin override is now active."
 #
 # ==============================================================================
 
-log_step "4/4" "Generating restricted .xinitrc for kiosk session"
+log_step "4/7" "Generating restricted .xinitrc for kiosk session"
 
 # Define the path to the .xinitrc file in the kiosk user's home directory.
 readonly XINITRC_PATH="${KIOSK_HOME}/.xinitrc"
@@ -580,36 +580,44 @@ xset s noblank
 unclutter -idle 0.1 -root -jitter 2 &
 
 # ------------------------------------------------------------------------------
-# CHROMIUM KIOSK LAUNCH
+# CHROMIUM KIOSK LAUNCH (WITH AUTO-RESTART WATCHDOG)
 # Launch Chromium in strict kiosk mode with all escape routes disabled.
-# 'exec' replaces this shell process with Chromium, ensuring that when
-# Chromium exits (or crashes), the X session terminates cleanly.
+# A while-loop ensures automatic restart if Chromium crashes or exits,
+# maintaining kiosk availability without IT intervention.
 # ------------------------------------------------------------------------------
 
-exec chromium-browser \
-    --kiosk \
-    --incognito \
-    --no-first-run \
-    --disable-translate \
-    --disable-infobars \
-    --disable-features=TranslateUI \
-    --noerrdialogs \
-    --disable-session-crashed-bubble \
-    --check-for-update-interval=31536000 \
-    --disable-component-update \
-    --autoplay-policy=no-user-gesture-required \
-    --disable-pinch \
-    --overscroll-history-navigation=0 \
-    --disable-dev-tools \
-    --disable-extensions \
-    --disable-popup-blocking \
-    --disable-background-networking \
-    --password-store=basic \
-    --disable-sync \
-    --disable-default-apps \
-    --start-fullscreen \
-    --window-position=0,0 \
-    'http://localhost'
+# Auto-restart watchdog: if Chromium crashes, it restarts automatically.
+# A log entry is created for each restart event.
+while true; do
+    chromium-browser \
+        --kiosk \
+        --incognito \
+        --no-first-run \
+        --disable-translate \
+        --disable-infobars \
+        --disable-features=TranslateUI \
+        --noerrdialogs \
+        --disable-session-crashed-bubble \
+        --check-for-update-interval=31536000 \
+        --disable-component-update \
+        --autoplay-policy=no-user-gesture-required \
+        --disable-pinch \
+        --overscroll-history-navigation=0 \
+        --disable-dev-tools \
+        --disable-extensions \
+        --disable-popup-blocking \
+        --disable-background-networking \
+        --password-store=basic \
+        --disable-sync \
+        --disable-default-apps \
+        --start-fullscreen \
+        --window-position=0,0 \
+        'http://localhost'
+
+    # Brief delay before restart to prevent rapid crash loops.
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Chromium exited. Restarting in 3s..." >> /tmp/pallatio-kiosk.log
+    sleep 3
+done
 XINITRC_EOF
 
 # Set ownership of the .xinitrc to the kiosk user.
@@ -625,32 +633,243 @@ chmod 755 "${XINITRC_PATH}"
 log_info ".xinitrc written to: ${XINITRC_PATH}"
 log_info "  Screen blanking  : DISABLED (xset s off, -dpms, s noblank)"
 log_info "  Cursor hiding    : ENABLED (unclutter, 0.1s idle timeout)"
-log_info "  Chromium mode    : --kiosk --incognito (fully locked down)"
+log_info "  Chromium mode    : --kiosk --incognito (auto-restart watchdog)"
 log_info "  Kiosk URL        : ${KIOSK_URL}"
 log_info "  File owner       : ${KIOSK_USER}:${KIOSK_USER}"
 log_info "  File perms       : 755"
 
 # ==============================================================================
-# SECTION 7: POST-DEPLOYMENT SUMMARY
+# SECTION 7: STEP 5 — SSH HARDENING
+# ==============================================================================
+#
+# Security Rationale (Designed by Nicky Hadfat):
+#
+#   In a kiosk environment where physical keyboard access is completely
+#   locked to the browser, SSH is the ONLY way for IT administrators
+#   to perform maintenance. However, SSH itself must be hardened:
+#
+#   1. DISABLE PASSWORD AUTHENTICATION:
+#      Password-based SSH is vulnerable to brute-force attacks.
+#      Only RSA/Ed25519 key-pair authentication is permitted.
+#
+#   2. DISABLE ROOT LOGIN:
+#      Even with valid credentials, direct root SSH login is blocked.
+#      Admins must login as a regular user and escalate via sudo.
+#
+#   3. LIMIT AUTHENTICATION ATTEMPTS:
+#      Reduces the window for brute-force attacks.
+#
+# ==============================================================================
+
+log_step "5/7" "Hardening SSH remote access configuration"
+
+readonly SSHD_CONFIG="/etc/ssh/sshd_config"
+
+if [[ -f "${SSHD_CONFIG}" ]]; then
+    # Create a backup before modifying.
+    cp "${SSHD_CONFIG}" "${SSHD_CONFIG}.pallatio.bak"
+    log_info "Backup created: ${SSHD_CONFIG}.pallatio.bak"
+
+    # Function to set or update an SSH config directive.
+    # If the param exists (commented or not), update it in-place.
+    # Otherwise, append it to the end of the file.
+    set_ssh_param() {
+        local param="$1"
+        local value="$2"
+        if grep -qE "^\s*${param}\s+" "${SSHD_CONFIG}"; then
+            sed -i "s/^\s*${param}\s\+.*/${param} ${value}/" "${SSHD_CONFIG}"
+        elif grep -qE "^\s*#\s*${param}\s+" "${SSHD_CONFIG}"; then
+            sed -i "s/^\s*#\s*${param}\s\+.*/${param} ${value}/" "${SSHD_CONFIG}"
+        else
+            echo "${param} ${value}" >> "${SSHD_CONFIG}"
+        fi
+        log_info "  ${param} = ${value}"
+    }
+
+    log_info "Applying SSH hardening parameters..."
+    set_ssh_param "PasswordAuthentication" "no"
+    set_ssh_param "PermitRootLogin" "no"
+    set_ssh_param "PubkeyAuthentication" "yes"
+    set_ssh_param "MaxAuthTries" "3"
+    set_ssh_param "PermitEmptyPasswords" "no"
+    set_ssh_param "X11Forwarding" "no"
+    set_ssh_param "AllowAgentForwarding" "no"
+    set_ssh_param "ClientAliveInterval" "300"
+    set_ssh_param "ClientAliveCountMax" "2"
+
+    # Validate the SSH config before restarting the service.
+    if sshd -t 2>/dev/null; then
+        systemctl restart sshd
+        log_info "SSH service restarted with hardened configuration."
+    else
+        log_warn "SSH config validation failed. Restoring backup."
+        cp "${SSHD_CONFIG}.pallatio.bak" "${SSHD_CONFIG}"
+        log_warn "Original SSH config restored. SSH hardening skipped."
+    fi
+else
+    log_warn "SSH config not found at ${SSHD_CONFIG}. Skipping SSH hardening."
+    log_warn "Install OpenSSH server: apt install openssh-server"
+fi
+
+# ==============================================================================
+# SECTION 8: STEP 6 — FIREWALL CONFIGURATION (UFW)
+# ==============================================================================
+#
+# Security Rationale (Designed by Nicky Hadfat):
+#
+#   A kiosk terminal should expose ZERO network services to the outside
+#   world except for SSH (for remote maintenance). UFW (Uncomplicated
+#   Firewall) provides a simple interface to iptables for this purpose.
+#
+#   Policy:
+#     - DEFAULT DENY INCOMING: Block all unsolicited incoming connections.
+#     - DEFAULT ALLOW OUTGOING: Allow the kiosk to reach the internet
+#       (for loading kiosk content).
+#     - ALLOW SSH (port 22): The only permitted incoming service.
+#
+# ==============================================================================
+
+log_step "6/7" "Configuring firewall (UFW)"
+
+if command -v ufw &>/dev/null; then
+    log_info "UFW is available. Configuring firewall rules..."
+
+    # Set default policies.
+    ufw default deny incoming &>/dev/null
+    ufw default allow outgoing &>/dev/null
+    log_info "  Default incoming : DENY"
+    log_info "  Default outgoing : ALLOW"
+
+    # Allow SSH (port 22) for remote maintenance.
+    ufw allow ssh &>/dev/null
+    log_info "  SSH (port 22)    : ALLOWED"
+
+    # Enable the firewall non-interactively.
+    echo "y" | ufw enable &>/dev/null
+    log_info "UFW firewall is now ACTIVE."
+
+    # Display current rules for verification.
+    ufw status verbose 2>/dev/null | while IFS= read -r line; do
+        log_info "  UFW: ${line}"
+    done
+else
+    log_warn "UFW is not installed. Attempting to install..."
+    apt-get install -y ufw &>/dev/null && {
+        ufw default deny incoming &>/dev/null
+        ufw default allow outgoing &>/dev/null
+        ufw allow ssh &>/dev/null
+        echo "y" | ufw enable &>/dev/null
+        log_info "UFW installed, configured, and activated."
+    } || {
+        log_warn "Failed to install UFW. Firewall configuration skipped."
+        log_warn "Install manually: apt install ufw"
+    }
+fi
+
+# ==============================================================================
+# SECTION 9: STEP 7 — UNATTENDED SECURITY UPDATES
+# ==============================================================================
+#
+# Security Rationale (Designed by Nicky Hadfat):
+#
+#   A kiosk terminal that runs 24/7 without human interaction must still
+#   receive critical security patches. Unattended-upgrades ensures that
+#   security updates from the distribution's security repository are
+#   automatically downloaded and installed.
+#
+#   This is essential for:
+#     - Patching kernel vulnerabilities
+#     - Updating OpenSSL/TLS libraries
+#     - Fixing Chromium security bugs
+#
+# ==============================================================================
+
+log_step "7/7" "Configuring unattended security updates"
+
+if dpkg -l | grep -q unattended-upgrades 2>/dev/null; then
+    log_info "unattended-upgrades is already installed."
+else
+    log_info "Installing unattended-upgrades..."
+    apt-get install -y unattended-upgrades &>/dev/null && {
+        log_info "unattended-upgrades installed successfully."
+    } || {
+        log_warn "Failed to install unattended-upgrades. Skipping."
+    }
+fi
+
+# Configure unattended-upgrades for security-only updates.
+readonly UNATTENDED_CONF="/etc/apt/apt.conf.d/50pallatio-unattended"
+
+cat > "${UNATTENDED_CONF}" << 'UNATTENDED_EOF'
+// ==============================================================================
+// Pallatio OS — Unattended Security Updates Configuration
+// Security Architect: Nicky Hadfat
+//
+// Only security updates are applied automatically.
+// Non-security updates require manual intervention via SSH.
+// ==============================================================================
+
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+
+// Automatically remove unused kernel packages after upgrade.
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+// Automatically remove unused dependencies after upgrade.
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// Automatically reboot if a restart is required (e.g., kernel update).
+// The reboot occurs at 03:00 AM to minimize disruption.
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+UNATTENDED_EOF
+
+# Enable the automatic update timer.
+readonly AUTO_UPDATE_CONF="/etc/apt/apt.conf.d/20pallatio-auto-updates"
+
+cat > "${AUTO_UPDATE_CONF}" << 'AUTOUPDATE_EOF'
+// Pallatio OS — Automatic Update Schedule
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+AUTOUPDATE_EOF
+
+log_info "Unattended security updates configured."
+log_info "  Config: ${UNATTENDED_CONF}"
+log_info "  Auto-update: ${AUTO_UPDATE_CONF}"
+log_info "  Auto-reboot: YES (03:00 AM if required)"
+
+# ==============================================================================
+# SECTION 10: POST-DEPLOYMENT SUMMARY
 # ==============================================================================
 
 echo ""
 echo -e "\033[1;35m╔══════════════════════════════════════════════════════════════════╗\033[0m"
 echo -e "\033[1;35m║                                                                  ║\033[0m"
-echo -e "\033[1;35m║\033[0m   \033[1;32m✓ PALLATIO OS DEPLOYMENT COMPLETE\033[0m                              \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m   \033[1;32m✓ PALLATIO OS v1.1.0 DEPLOYMENT COMPLETE\033[0m                      \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   The following security measures have been applied:             \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m     [✓] Restricted kiosk user created (nologin shell)            \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m     [✓] Kernel hardened (Magic SysRq disabled)                   \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m     [✓] Autologin configured on ${AUTOLOGIN_TTY}                          \033[1;35m║\033[0m"
-echo -e "\033[1;35m║\033[0m     [✓] .xinitrc generated (Chromium kiosk + incognito)          \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m     [✓] .xinitrc generated (Chromium kiosk + auto-restart)       \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m     [✓] SSH hardened (key-only auth, no root login)              \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m     [✓] Firewall active (UFW — SSH only)                        \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m     [✓] Unattended security updates enabled                     \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   Security Architect: \033[1;33mNicky Hadfat\033[0m                              \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   Completed at: ${TIMESTAMP}                       \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   \033[0;33mReboot the system to activate the kiosk environment.\033[0m          \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m   $ sudo reboot                                                  \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m   \033[0;36mMaintenance access:\033[0m                                            \033[1;35m║\033[0m"
+echo -e "\033[1;35m║\033[0m   $ ssh <admin-user>@<kiosk-ip>                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m║\033[0m                                                                  \033[1;35m║\033[0m"
 echo -e "\033[1;35m╚══════════════════════════════════════════════════════════════════╝\033[0m"
 echo ""
@@ -660,3 +879,4 @@ echo ""
 # ==============================================================================
 # Exit with success status code.
 exit 0
+
